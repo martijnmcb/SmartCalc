@@ -3,7 +3,6 @@ import pandas as pd
 import os
 import json
 import pickle
-from itertools import permutations
 
 route_cache_file = "route_cache.pkl"
 route_cache = {}
@@ -32,7 +31,7 @@ if uploaded_postcode_file is not None:
         postcode_df = None
 
 def get_osrm_optimized_route(coords):
-    
+    from itertools import permutations
 
     best_order = coords
     best_time = float("inf")
@@ -142,7 +141,7 @@ def find_optimal_route(start, via, end, method=None):
                     else:
                         matrix[i][j] = float("inf")
 
-        
+        from itertools import permutations
 
         best_time = float("inf")
         best_order = via
