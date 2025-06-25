@@ -1,5 +1,17 @@
 import streamlit as st
 import pandas as pd
+import os
+import json
+import pickle
+
+route_cache_file = "route_cache.pkl"
+route_cache = {}
+if os.path.exists(route_cache_file):
+    with open(route_cache_file, "rb") as f:
+        try:
+            route_cache = pickle.load(f)
+        except:
+            route_cache = {}
 
 postcode_cache = {}
 
@@ -43,6 +55,8 @@ import folium
 from streamlit_folium import st_folium
 from itertools import permutations
 
+global postcode_cache
+
 @st.cache_data(show_spinner=False)
 def postcode_to_coords(postcode, postcode_dict=None, postcode_df=None):
     global postcode_cache
@@ -52,8 +66,7 @@ def postcode_to_coords(postcode, postcode_dict=None, postcode_df=None):
         if not match.empty:
             lat = float(match.iloc[0]["lat"])
             lon = float(match.iloc[0]["lon"])
-            if postcode_cache is not None:
-                postcode_cache[p] = (lat, lon)
+            postcode_cache[p] = (lat, lon)
             return lat, lon
     if postcode_dict and p in postcode_dict:
         return postcode_dict[p]
@@ -68,17 +81,33 @@ def postcode_to_coords(postcode, postcode_dict=None, postcode_df=None):
     if data:
         lat = float(data[0]["lat"])
         lon = float(data[0]["lon"])
-        if postcode_cache is not None:
-            postcode_cache[p] = (lat, lon)
+        postcode_cache[p] = (lat, lon)
         return lat, lon
     return None
 
 def get_osrm_route(coords_list):
+    coords_key = "|".join([f"{lat:.5f},{lon:.5f}" for lat, lon in coords_list])
+    if coords_key in route_cache:
+        return route_cache[coords_key]
     coords_str = ";".join([f"{lon},{lat}" for lat, lon in coords_list])
     url = f"http://localhost:5000/route/v1/driving/{coords_str}?overview=full&geometries=geojson"
     response = requests.get(url)
     if response.status_code == 200:
-        return response.json()
+        result = response.json()
+        # Alleen afstand/tijd + geometry in cache
+        if result.get("routes"):
+            cache_data = {
+                "routes": [{
+                    "distance": result["routes"][0]["distance"],
+                    "duration": result["routes"][0]["duration"],
+                    "geometry": result["routes"][0]["geometry"]
+                }],
+                "code": result.get("code", "Ok")
+            }
+            route_cache[coords_key] = cache_data
+            with open(route_cache_file, "wb") as f:
+                pickle.dump(route_cache, f)
+            return cache_data
     return None
 
 def find_optimal_route(start, via, end, method=None):
