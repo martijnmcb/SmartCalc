@@ -14,6 +14,16 @@ if os.path.exists(route_cache_file):
         except:
             route_cache = {}
 
+# Segment cache toevoegen
+segment_cache_file = "segment_cache.pkl"
+segment_cache = {}
+if os.path.exists(segment_cache_file):
+    with open(segment_cache_file, "rb") as f:
+        try:
+            segment_cache = pickle.load(f)
+        except:
+            segment_cache = {}
+
 postcode_cache = {}
 
 uploaded_postcode_file = st.sidebar.file_uploader("📄 Upload postcode-coördinaten CSV (kolommen: postcode, lat, lon)", type=["csv"])
@@ -86,28 +96,50 @@ def postcode_to_coords(postcode, postcode_dict=None, postcode_df=None):
     return None
 
 def get_osrm_route(coords_list):
-    coords_key = "|".join([f"{lat:.5f},{lon:.5f}" for lat, lon in coords_list])
-    if coords_key in route_cache:
-        return route_cache[coords_key]
-    coords_str = ";".join([f"{lon},{lat}" for lat, lon in coords_list])
-    url = f"http://localhost:5000/route/v1/driving/{coords_str}?overview=full&geometries=geojson"
-    response = requests.get(url)
-    if response.status_code == 200:
-        result = response.json()
-        # Alleen afstand/tijd + geometry in cache
-        if result.get("routes"):
-            cache_data = {
-                "routes": [{
-                    "distance": result["routes"][0]["distance"],
-                    "duration": result["routes"][0]["duration"],
-                    "geometry": result["routes"][0]["geometry"]
-                }],
-                "code": result.get("code", "Ok")
-            }
-            route_cache[coords_key] = cache_data
-            with open(route_cache_file, "wb") as f:
-                pickle.dump(route_cache, f)
-            return cache_data
+    segments = []
+    total_distance = 0
+    total_duration = 0
+    full_coordinates = []
+
+    for i in range(len(coords_list) - 1):
+        a, b = coords_list[i], coords_list[i + 1]
+        seg_key = f"{a[0]:.5f},{a[1]:.5f}->{b[0]:.5f},{b[1]:.5f}"
+
+        if seg_key in segment_cache:
+            seg_result = segment_cache[seg_key]
+        else:
+            url = f"http://localhost:5000/route/v1/driving/{a[1]},{a[0]};{b[1]},{b[0]}?overview=full&geometries=geojson"
+            response = requests.get(url)
+            if response.status_code == 200:
+                seg_result = response.json()
+                if seg_result.get("routes"):
+                    segment_cache[seg_key] = seg_result
+                    with open(segment_cache_file, "wb") as f:
+                        pickle.dump(segment_cache, f)
+                else:
+                    return None
+            else:
+                return None
+
+        if seg_result and seg_result.get("routes"):
+            total_distance += seg_result["routes"][0]["distance"]
+            total_duration += seg_result["routes"][0]["duration"]
+            geometry = seg_result["routes"][0]["geometry"]
+            if geometry["type"] == "LineString":
+                full_coordinates.extend(geometry["coordinates"])
+
+    if full_coordinates:
+        return {
+            "routes": [{
+                "distance": total_distance,
+                "duration": total_duration,
+                "geometry": {
+                    "type": "LineString",
+                    "coordinates": full_coordinates
+                }
+            }],
+            "code": "Ok"
+        }
     return None
 
 def find_optimal_route(start, via, end, method=None):
