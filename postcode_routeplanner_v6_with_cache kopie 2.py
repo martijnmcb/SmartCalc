@@ -31,6 +31,9 @@ batch_route_cache = st.session_state["batch_route_cache"]
 
 postcode_cache = {}
 
+# Optimalisatiemethode selectie naar de sidebar verplaatst
+method = st.sidebar.radio("Optimalisatiemethode", ["Brute-Force", "Nearest Neighbor", "Matrix"], key="global_method")
+
 uploaded_postcode_file = st.sidebar.file_uploader("📄 Upload postcode-coördinaten CSV (kolommen: postcode, lat, lon)", type=["csv"])
 postcode_df = None
 if uploaded_postcode_file is not None:
@@ -209,105 +212,107 @@ def find_optimal_route(start, via, end, method=None):
                     best_coords = route_coords
         return best_order, best_coords, best_time
 
-st.title("📍 Routeplanner: Interactief of Batchverwerking")
-method = st.radio("Optimalisatiemethode", ["Brute-Force", "Nearest Neighbor", "Matrix"], key="global_method")
+st.title("📍 Routeplanner")
 
-col1, col2 = st.columns(2)
-with col1:
-    postcode_start = st.text_input("Postcode van (startpunt)", "2011AA")
-with col2:
-    postcode_end = st.text_input("Postcode naar (eindpunt)", "1012WX")
+tab1, tab2 = st.tabs(["🧭 Interactieve planner", "📑 Batch via Excel"])
 
-postcodes_via = st.text_input("Postcodes via (komma-gescheiden)", "3511CE,2628CD")
-optimize = st.checkbox("Optimaliseer tussenstops", value=True)
+with tab1:
+    col1, col2 = st.columns(2)
+    with col1:
+        postcode_start = st.text_input("Postcode van (startpunt)", "2011AA")
+    with col2:
+        postcode_end = st.text_input("Postcode naar (eindpunt)", "1012WX")
 
-if "result" not in st.session_state:
-    st.session_state["result"] = None
+    postcodes_via = st.text_input("Postcodes via (komma-gescheiden)", "3511CE,2628CD")
+    optimize = st.checkbox("Optimaliseer tussenstops", value=True)
 
-if st.button("🚗 Bereken route"):
-    via_list = [p.strip() for p in postcodes_via.split(",") if p.strip()]
-    all_postcodes = [postcode_start] + via_list + [postcode_end]
+    if "result" not in st.session_state:
+        st.session_state["result"] = None
 
-    coord_map = {}
-    for p in all_postcodes:
-        c = postcode_to_coords(p, postcode_df=postcode_df)
-        if c:
-            coord_map[p] = c
-        else:
-            st.error(f"❌ Geen coördinaten gevonden voor postcode: {p}")
-            st.stop()
+    if st.button("🚗 Bereken route"):
+        via_list = [p.strip() for p in postcodes_via.split(",") if p.strip()]
+        all_postcodes = [postcode_start] + via_list + [postcode_end]
 
-    start = coord_map[postcode_start]
-    end = coord_map[postcode_end]
-    via_coords = [coord_map[p] for p in via_list]
+        coord_map = {}
+        for p in all_postcodes:
+            c = postcode_to_coords(p, postcode_df=postcode_df)
+            if c:
+                coord_map[p] = c
+            else:
+                st.error(f"❌ Geen coördinaten gevonden voor postcode: {p}")
+                st.stop()
 
-    original_coords = [start] + via_coords + [end]
-    route_orig = get_osrm_route(original_coords)
+        start = coord_map[postcode_start]
+        end = coord_map[postcode_end]
+        via_coords = [coord_map[p] for p in via_list]
 
-    result_data = {
-        "original": {
-            "coords": original_coords,
-            "route": route_orig,
-        },
-        "optimized": None,
-    }
+        original_coords = [start] + via_coords + [end]
+        route_orig = get_osrm_route(original_coords)
 
-    if optimize:
-        best_order, best_coords, best_time = find_optimal_route(start, via_coords, end, method=st.session_state.get("global_method", "Brute-Force"))
-        result_data["optimized"] = {
-            "coords": best_coords,
-            "time": best_time
+        result_data = {
+            "original": {
+                "coords": original_coords,
+                "route": route_orig,
+            },
+            "optimized": None,
         }
 
-    st.session_state["result"] = result_data
+        if optimize:
+            best_order, best_coords, best_time = find_optimal_route(start, via_coords, end, method=st.session_state.get("global_method", "Brute-Force"))
+            result_data["optimized"] = {
+                "coords": best_coords,
+                "time": best_time
+            }
 
-# Toon kaarten als resultaat beschikbaar is
-if st.session_state["result"]:
-    data = st.session_state["result"]
+        st.session_state["result"] = result_data
 
-    # Originele route
-    if data["original"]["route"] and data["original"]["route"].get("code") == "Ok":
-        route_orig = data["original"]["route"]
-        original_coords = data["original"]["coords"]
-        tijd_orig = route_orig["routes"][0]["duration"] / 60
-        afstand_orig = route_orig["routes"][0]["distance"] / 1000
+    # Toon kaarten als resultaat beschikbaar is
+    if st.session_state["result"]:
+        data = st.session_state["result"]
 
-        st.subheader("🔵 Oorspronkelijke volgorde")
-        st.write(f"🕒 Reistijd: {tijd_orig:.1f} min — 📏 Afstand: {afstand_orig:.2f} km")
+        # Originele route
+        if data["original"]["route"] and data["original"]["route"].get("code") == "Ok":
+            route_orig = data["original"]["route"]
+            original_coords = data["original"]["coords"]
+            tijd_orig = route_orig["routes"][0]["duration"] / 60
+            afstand_orig = route_orig["routes"][0]["distance"] / 1000
 
-        with st.container():
-            m1 = folium.Map(location=original_coords[0])
-            m1.fit_bounds([(lat, lon) for lat, lon in original_coords])
-            if route_orig.get("routes"):
-                folium.GeoJson(route_orig["routes"][0]["geometry"], name="route").add_to(m1)
-            else:
-                folium.PolyLine(locations=[(lat, lon) for lat, lon in original_coords], color="blue").add_to(m1)
-            for i, (lat, lon) in enumerate(original_coords):
-                color = "green" if i == 0 else "red" if i == len(original_coords) - 1 else "blue"
-                folium.Marker([lat, lon], popup=f"Stop {i+1}", tooltip=f"Stop {i+1}", icon=folium.Icon(color=color, icon="info-sign")).add_to(m1)
-            st_folium(m1, width=700, height=400, key="map_orig", feature_group_to_add=None)
+            st.subheader("🔵 Oorspronkelijke volgorde")
+            st.write(f"🕒 Reistijd: {tijd_orig:.1f} min — 📏 Afstand: {afstand_orig:.2f} km")
 
-    # Geoptimaliseerde route
-    if optimize and data["optimized"]:
-        best_coords = data["optimized"]["coords"]
-        tijd_best = data["optimized"]["time"] / 60
-        geojson_route = get_osrm_route(best_coords)
-        afstand_best = geojson_route["routes"][0]["distance"] / 1000 if geojson_route else 0
+            with st.container():
+                m1 = folium.Map(location=original_coords[0])
+                m1.fit_bounds([(lat, lon) for lat, lon in original_coords])
+                if route_orig.get("routes"):
+                    folium.GeoJson(route_orig["routes"][0]["geometry"], name="route").add_to(m1)
+                else:
+                    folium.PolyLine(locations=[(lat, lon) for lat, lon in original_coords], color="blue").add_to(m1)
+                for i, (lat, lon) in enumerate(original_coords):
+                    color = "green" if i == 0 else "red" if i == len(original_coords) - 1 else "blue"
+                    folium.Marker([lat, lon], popup=f"Stop {i+1}", tooltip=f"Stop {i+1}", icon=folium.Icon(color=color, icon="info-sign")).add_to(m1)
+                st_folium(m1, width=700, height=400, key="map_orig", feature_group_to_add=None)
 
-        st.subheader("🟢 Geoptimaliseerde volgorde")
-        st.write(f"🕒 Reistijd: {tijd_best:.1f} min — 📏 Afstand: {afstand_best:.2f} km")
+        # Geoptimaliseerde route
+        if optimize and data["optimized"]:
+            best_coords = data["optimized"]["coords"]
+            tijd_best = data["optimized"]["time"] / 60
+            geojson_route = get_osrm_route(best_coords)
+            afstand_best = geojson_route["routes"][0]["distance"] / 1000 if geojson_route else 0
 
-        with st.container():
-            m2 = folium.Map(location=best_coords[0])
-            m2.fit_bounds([(lat, lon) for lat, lon in best_coords])
-            if geojson_route:
-                folium.GeoJson(geojson_route["routes"][0]["geometry"], name="route").add_to(m2)
-            else:
-                folium.PolyLine(locations=[(lat, lon) for lat, lon in best_coords], color="green").add_to(m2)
-            for i, (lat, lon) in enumerate(best_coords):
-                color = "green" if i == 0 else "red" if i == len(best_coords) - 1 else "blue"
-                folium.Marker([lat, lon], popup=f"Stop {i+1}", tooltip=f"Stop {i+1}", icon=folium.Icon(color=color, icon="info-sign")).add_to(m2)
-            st_folium(m2, width=700, height=400, key="map_opt", feature_group_to_add=None)
+            st.subheader("🟢 Geoptimaliseerde volgorde")
+            st.write(f"🕒 Reistijd: {tijd_best:.1f} min — 📏 Afstand: {afstand_best:.2f} km")
+
+            with st.container():
+                m2 = folium.Map(location=best_coords[0])
+                m2.fit_bounds([(lat, lon) for lat, lon in best_coords])
+                if geojson_route:
+                    folium.GeoJson(geojson_route["routes"][0]["geometry"], name="route").add_to(m2)
+                else:
+                    folium.PolyLine(locations=[(lat, lon) for lat, lon in best_coords], color="green").add_to(m2)
+                for i, (lat, lon) in enumerate(best_coords):
+                    color = "green" if i == 0 else "red" if i == len(best_coords) - 1 else "blue"
+                    folium.Marker([lat, lon], popup=f"Stop {i+1}", tooltip=f"Stop {i+1}", icon=folium.Icon(color=color, icon="info-sign")).add_to(m2)
+                st_folium(m2, width=700, height=400, key="map_opt", feature_group_to_add=None)
 
 def load_postcode_coordinates(csv_path):
     df = pd.read_csv(csv_path, dtype=str)
@@ -382,17 +387,13 @@ def process_batch(uploaded_file):
     return pd.DataFrame(results)
 
 
-st.title("📍 Routeplanner: Interactief of Batchverwerking")
-mode = st.radio("Kies modus:", ["Interactieve planner", "Batch via Excel"])
-
-if mode == "Batch via Excel":
+with tab2:
     uploaded = st.file_uploader("Upload een Excel-bestand met kolommen: Van, Via, Naar", type=["xlsx"])
     if uploaded and st.button("▶️ Start planner"):
         df_result = process_batch(uploaded)
         st.session_state["batch_df_result"] = df_result
 
-# Toon resultaten en kaarten na verwerking
-if mode == "Batch via Excel":
+    # Toon resultaten en kaarten na verwerking
     if "batch_df_result" in st.session_state:
         df_result = st.session_state["batch_df_result"]
         st.subheader("📊 Resultaten")
@@ -461,6 +462,3 @@ if mode == "Batch via Excel":
                 kleur = "green" if i == 0 else "red" if i == len(coords_opt) - 1 else "blue"
                 folium.Marker([lat, lon], tooltip=f"Stop {i+1}", icon=folium.Icon(color=kleur)).add_to(m2)
             st_folium(m2, width=700, height=400, key="map_optimaal")
-else:
-    # Interactieve planner code is al aanwezig in base_script
-    pass
