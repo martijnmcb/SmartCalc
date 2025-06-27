@@ -37,28 +37,15 @@ method = st.sidebar.radio("Optimalisatiemethode", ["Brute-Force", "Nearest Neigh
 
 # Toon percentage cache-hits direct na methodeselectie
 import shelve
-# Segment cache statistieken met reset-vlag
-if "segment_cache_reset" not in st.session_state:
-    st.session_state["segment_cache_reset"] = True
-
-if st.session_state["segment_cache_reset"]:
-    with shelve.open("segment_cache.db", writeback=True) as segment_cache:
-        segment_cache["_total_requests"] = 0
-        segment_cache["_cache_hits"] = 0
-    st.session_state["segment_cache_reset"] = False
-
-# Toon segment cache statistieken altijd in de sidebar
-try:
-    with shelve.open("segment_cache.db", writeback=False) as segment_cache:
+with shelve.open("segment_cache.db", writeback=False) as segment_cache:
+    try:
         total_segments = segment_cache.get("_total_requests", 0)
         hits = segment_cache.get("_cache_hits", 0)
-    if total_segments > 0:
-        percentage = 100 * hits / total_segments
-        st.sidebar.caption(f"💾 Segment cache: {hits} hits van {total_segments} ({percentage:.1f}%)")
-    else:
-        st.sidebar.caption("💾 Segment cache: nog geen gegevens")
-except Exception as e:
-    st.sidebar.caption("⚠️ Kan cache-info niet lezen")
+        if total_segments > 0:
+            percentage = 100 * hits / total_segments
+            st.sidebar.caption(f"💾 Segment cache: {hits} hits van {total_segments} ({percentage:.1f}%)")
+    except Exception as e:
+        st.sidebar.caption("⚠️ Kan cache-info niet lezen")
 
 uploaded_postcode_file = st.sidebar.file_uploader("📄 Upload postcode-coördinaten CSV (kolommen: postcode, lat, lon)", type=["csv"])
 postcode_df = None
@@ -306,11 +293,10 @@ with tab1:
         st.session_state["result"] = None
 
     if st.button("🚗 Bereken route"):
-        # Reset segment cache teller vóór routeberekening
+        # Reset segment cache teller
         with shelve.open("segment_cache.db", writeback=True) as segment_cache:
             segment_cache["_total_requests"] = 0
             segment_cache["_cache_hits"] = 0
-        st.session_state["segment_cache_reset"] = False
         via_list = [p.strip() for p in postcodes_via.split(",") if p.strip()]
         all_postcodes = [postcode_start] + via_list + [postcode_end]
 
@@ -329,13 +315,11 @@ with tab1:
 
         original_coords = [start] + via_coords + [end]
         route_orig = get_osrm_route(original_coords)
-        coords_all_orig = route_orig["routes"][0]["geometry"]["coordinates"] if route_orig and route_orig.get("routes") else []
 
         result_data = {
             "original": {
                 "coords": original_coords,
                 "route": route_orig,
-                "coords_all": coords_all_orig
             },
             "optimized": None,
         }
@@ -346,19 +330,6 @@ with tab1:
                 "coords": best_coords,
                 "time": best_time
             }
-
-        # Toon segment cache statistieken na deze planslag
-        try:
-            with shelve.open("segment_cache.db", writeback=False) as segment_cache:
-                total_segments = segment_cache.get("_total_requests", 0)
-                hits = segment_cache.get("_cache_hits", 0)
-            if total_segments > 0:
-                percentage = 100 * hits / total_segments
-                st.sidebar.caption(f"💾 Segment cache: {hits} hits van {total_segments} ({percentage:.1f}%)")
-            else:
-                st.sidebar.caption("💾 Segment cache: nog geen gegevens")
-        except Exception as e:
-            st.sidebar.caption("⚠️ Kan cache-info niet lezen")
 
         st.session_state["result"] = result_data
 
@@ -453,11 +424,7 @@ with tab1:
             ))
 
             # Center map
-            coords_all = []
-            if optimize and data.get("optimized") and data["optimized"].get("route") and data["optimized"]["route"].get("geometry"):
-                coords_all = data["optimized"]["route"]["geometry"].get("coordinates", [])
-            else:
-                coords_all = data["original"].get("coords_all", [])
+            coords_all = route_opt["routes"][0]["geometry"]["coordinates"]
             mid_lat = sum(coord[1] for coord in coords_all) / len(coords_all)
             mid_lon = sum(coord[0] for coord in coords_all) / len(coords_all)
 
@@ -482,10 +449,6 @@ from io import BytesIO
 def process_batch(uploaded_file):
     start_time = time.time()
     print(f"[DEBUG] Start process_batch")
-    # Reset segment cache teller
-    with shelve.open("segment_cache.db", writeback=True) as segment_cache:
-        segment_cache["_total_requests"] = 0
-        segment_cache["_cache_hits"] = 0
     df = pd.read_excel(uploaded_file)
     if df.empty:
         st.warning("⚠️ Geen gegevens gevonden in het Excel-bestand.")
@@ -564,19 +527,15 @@ def process_batch(uploaded_file):
             "Tijd Origineel (min)": round(time_orig, 1) if time_orig is not None else None,
             "Afstand Optimaal (km)": round(dist_opt, 2) if dist_opt is not None else None,
             "Tijd Optimaal (min)": round(time_opt, 1) if time_opt is not None else None,
-            "Tijdswinst (min)": round(time_orig - time_opt, 1) if time_orig is not None and time_opt is not None else None,
-            "Datum": row.get("Datum", ""),
-            "Route id": row.get("Route id", ""),
+            "Tijdswinst (min)": round(time_orig - time_opt, 1) if time_orig is not None and time_opt is not None else None
         })
-        # Sla de routes per batch op in session_state["batch_result_cache"] en voeg coords_all_opt toe
-        coords_all_opt = route_opt["routes"][0]["geometry"]["coordinates"] if route_opt and route_opt.get("routes") else []
+        # Sla de routes per batch op in session_state["batch_result_cache"]
         st.session_state["batch_result_cache"][idx + 1] = {
             "route_orig": route_orig,
             "route_opt": route_opt,
             "coord_map": coord_map,
             "coords_orig": coords,
-            "coords_opt": best_coords,
-            "coords_all_opt": coords_all_opt
+            "coords_opt": best_coords
         }
     progress.empty()
     print(f"[DEBUG] Einde process_batch - duur: {time.time() - start_time:.2f}s")
@@ -630,7 +589,6 @@ def plot_gantt_chart(tijden, labels, titel="Gantt chart van rit"):
 with tab2:
     uploaded = st.file_uploader("Upload een Excel-bestand met kolommen: Van, Via, Naar", type=["xlsx"])
     if uploaded and st.button("▶️ Start planner"):
-        st.session_state["segment_cache_reset"] = True
         df_result = process_batch(uploaded)
         st.session_state["batch_df_result"] = df_result
 
@@ -652,7 +610,131 @@ with tab2:
             st.stop()
 
         # --- Automatisch selectie en tonen van routekaart na batchverwerking ---
-        # (verwijderd: direct routekaart weergeven na selectie/batch)
+        # Selecteer automatisch de eerste route indien nog geen selectie is gemaakt
+        if not st.session_state.get("selected_id") and not df_result.empty:
+            st.session_state["selected_id"] = df_result["RouteID"].iloc[0]
+
+        # Selectiebox voor routekeuze
+        selected_id = st.selectbox(
+            "🗺️ Selecteer een route om te bekijken",
+            df_result["RouteID"],
+            index=df_result["RouteID"].tolist().index(st.session_state["selected_id"]) if st.session_state.get("selected_id") in df_result["RouteID"].tolist() else 0,
+            key="selected_id"
+        )
+
+        # Direct routekaart weergeven na selectie/batch (zonder knop)
+        if selected_id is not None:
+            with st.spinner("Genereer kaarten..."):
+                selected_row = df_result[df_result["RouteID"] == selected_id].iloc[0]
+                van = selected_row["Van"]
+                naar = selected_row["Naar"]
+                via_orig = [p.strip() for p in selected_row["Via Origineel"].split(",")] if pd.notna(selected_row["Via Origineel"]) and selected_row["Via Origineel"] else []
+                via_opt = [p.strip() for p in selected_row["Via Geoptimaliseerd"].split(",")] if pd.notna(selected_row["Via Geoptimaliseerd"]) and selected_row["Via Geoptimaliseerd"] else []
+
+                full_orig = [van] + via_orig + [naar]
+                full_opt = [van] + via_opt + [naar]
+
+                # Haal de routes op uit session_state["batch_result_cache"] indien beschikbaar
+                batch_result_cache = st.session_state.get("batch_result_cache", {})
+                route_data = batch_result_cache.get(selected_id, {})
+                route_orig = route_data.get("route_orig")
+                route_opt = route_data.get("route_opt")
+                coord_map = route_data.get("coord_map", {})
+
+                # Nieuwe controle: alleen tonen als alle data aanwezig is
+                if not coord_map or route_orig is None or route_opt is None:
+                    st.warning("⚠️ Routedata incompleet voor deze selectie. Herbereken batch of controleer invoer.")
+                    st.stop()
+
+                coords_orig = route_data.get("coords_orig", [coord_map[p] for p in full_orig if p in coord_map])
+                coords_opt = route_data.get("coords_opt", [coord_map[p] for p in full_opt if p in coord_map])
+
+                # Toon gecombineerde kaart met beide routes (origineel = rood, geoptimaliseerd = groen)
+                st.subheader("🗺️ Routevergelijking (origineel vs geoptimaliseerd)")
+                tijd_orig = route_orig["routes"][0]["duration"] / 60
+                afstand_orig = route_orig["routes"][0]["distance"] / 1000
+                tijd_opt = route_opt["routes"][0]["duration"] / 60
+                afstand_opt = route_opt["routes"][0]["distance"] / 1000
+                st.write(f"🔴 Origineel: 🕒 {tijd_orig:.1f} min — 📏 {afstand_orig:.2f} km")
+                st.write(f"🟢 Optimaal: 🕒 {tijd_opt:.1f} min — 📏 {afstand_opt:.2f} km")
+                import plotly.graph_objects as go
+                fig = go.Figure()
+                # Originele route (rood)
+                fig.add_trace(go.Scattermapbox(
+                    lat=[coord[1] for coord in route_orig["routes"][0]["geometry"]["coordinates"]],
+                    lon=[coord[0] for coord in route_orig["routes"][0]["geometry"]["coordinates"]],
+                    mode="lines",
+                    line=dict(width=4, color="red"),
+                    name="Originele route"
+                ))
+                # Geoptimaliseerde route (groen)
+                fig.add_trace(go.Scattermapbox(
+                    lat=[coord[1] for coord in route_opt["routes"][0]["geometry"]["coordinates"]],
+                    lon=[coord[0] for coord in route_opt["routes"][0]["geometry"]["coordinates"]],
+                    mode="lines",
+                    line=dict(width=4, color="green"),
+                    name="Geoptimaliseerde route"
+                ))
+                # Voeg markers toe voor start- en eindpunt volgens instructie
+                if coords_opt and len(coords_opt) >= 2:
+                    fig.add_trace(go.Scattermapbox(
+                        lat=[coords_opt[0][0]],
+                        lon=[coords_opt[0][1]],
+                        mode='markers',
+                        marker=dict(size=12, color='green'),
+                        name='Startpunt'
+                    ))
+                    fig.add_trace(go.Scattermapbox(
+                        lat=[coords_opt[-1][0]],
+                        lon=[coords_opt[-1][1]],
+                        mode='markers',
+                        marker=dict(size=12, color='red'),
+                        name='Eindpunt'
+                    ))
+                # Center map
+                coords_all = route_opt["routes"][0]["geometry"]["coordinates"]
+                mid_lat = sum(coord[1] for coord in coords_all) / len(coords_all)
+                mid_lon = sum(coord[0] for coord in coords_all) / len(coords_all)
+                fig.update_layout(
+                    mapbox_style="open-street-map",
+                    mapbox_zoom=10,
+                    mapbox_center={"lat": mid_lat, "lon": mid_lon},
+                    margin={"r": 0, "t": 0, "l": 0, "b": 0},
+                    height=500,
+                    legend=dict(x=0, y=1)
+                )
+                st.plotly_chart(fig, use_container_width=True)
+                # --- Gantt chart en klokdiagram direct onder kaarten tonen ---
+                # Gebruik route_opt als mogelijk
+                full_osrm_opt = route_opt
+                if full_osrm_opt and "legs" in full_osrm_opt["routes"][0]:
+                    tijden = []
+                    labels = []
+                    tijd = datetime.datetime(2023, 1, 1, 8, 0)  # fictieve starttijd
+                    tijden.append(tijd)
+                    labels.append("Start")
+                    for i, leg in enumerate(full_osrm_opt["routes"][0]["legs"]):
+                        duur = datetime.timedelta(seconds=leg["duration"])
+                        tijd += duur
+                        tijden.append(tijd)
+                        labels.append(f"Stop {i+1}")
+                    import plotly.express as px
+                    df_gantt = []
+                    for i in range(len(tijden) - 1):
+                        df_gantt.append({
+                            "Stop": labels[i],
+                            "Start": tijden[i],
+                            "Einde": tijden[i + 1]
+                        })
+                    df_gantt.append({
+                        "Stop": labels[-1],
+                        "Start": tijden[-1],
+                        "Einde": tijden[-1]
+                    })
+                    fig_gantt = px.timeline(df_gantt, x_start="Start", x_end="Einde", y="Stop", title="Gantt chart geoptimaliseerde route")
+                    fig_gantt.update_yaxes(autorange="reversed")
+                    kaart_label = "gantt"
+                    st.plotly_chart(fig_gantt, use_container_width=True, key=f"plotly_{selected_id}_{kaart_label}")
 
     # --- Segmentenmatrix opbouwen tabblad ---
     with st.expander("🗂️ Segmentenmatrix opbouwen (optioneel, vooraf vullen van cache)"):
@@ -700,4 +782,4 @@ with tab2:
                     count += 1
                     progress.progress(count / len(all_pairs), text=f"Verwerkt {count} van {len(all_pairs)} segmenten...")
             st.success(f"✅ Segmentcache aangevuld met {added} nieuwe routes.")
-        
+    
