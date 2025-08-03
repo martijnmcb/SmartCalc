@@ -379,7 +379,7 @@ with tab1:
             fig = go.Figure()
 
             # Originele route (rood)
-            fig.add_trace(go.Scattermapbox(
+            fig.add_trace(go.Scattermap(
                 lat=[coord[1] for coord in route_orig["routes"][0]["geometry"]["coordinates"]],
                 lon=[coord[0] for coord in route_orig["routes"][0]["geometry"]["coordinates"]],
                 mode="lines",
@@ -388,7 +388,7 @@ with tab1:
             ))
 
             # Geoptimaliseerde route (groen)
-            fig.add_trace(go.Scattermapbox(
+            fig.add_trace(go.Scattermap(
                 lat=[coord[1] for coord in route_opt["routes"][0]["geometry"]["coordinates"]],
                 lon=[coord[0] for coord in route_opt["routes"][0]["geometry"]["coordinates"]],
                 mode="lines",
@@ -407,7 +407,7 @@ with tab1:
             # Dus:
             # route_coords[0][0] = lat, route_coords[0][1] = lon
             # We willen lat=[lat], lon=[lon]
-            fig.add_trace(go.Scattermapbox(
+            fig.add_trace(go.Scattermap(
                 lat=[route_coords[0][0]],
                 lon=[route_coords[0][1]],
                 mode='markers',
@@ -415,7 +415,7 @@ with tab1:
                 name='Startpunt'
             ))
 
-            fig.add_trace(go.Scattermapbox(
+            fig.add_trace(go.Scattermap(
                 lat=[route_coords[-1][0]],
                 lon=[route_coords[-1][1]],
                 mode='markers',
@@ -660,7 +660,7 @@ with tab2:
                 import plotly.graph_objects as go
                 fig = go.Figure()
                 # Originele route (rood)
-                fig.add_trace(go.Scattermapbox(
+                fig.add_trace(go.Scattermap(
                     lat=[coord[1] for coord in route_orig["routes"][0]["geometry"]["coordinates"]],
                     lon=[coord[0] for coord in route_orig["routes"][0]["geometry"]["coordinates"]],
                     mode="lines",
@@ -668,7 +668,7 @@ with tab2:
                     name="Originele route"
                 ))
                 # Geoptimaliseerde route (groen)
-                fig.add_trace(go.Scattermapbox(
+                fig.add_trace(go.Scattermap(
                     lat=[coord[1] for coord in route_opt["routes"][0]["geometry"]["coordinates"]],
                     lon=[coord[0] for coord in route_opt["routes"][0]["geometry"]["coordinates"]],
                     mode="lines",
@@ -677,14 +677,14 @@ with tab2:
                 ))
                 # Voeg markers toe voor start- en eindpunt volgens instructie
                 if coords_opt and len(coords_opt) >= 2:
-                    fig.add_trace(go.Scattermapbox(
+                    fig.add_trace(go.Scattermap(
                         lat=[coords_opt[0][0]],
                         lon=[coords_opt[0][1]],
                         mode='markers',
                         marker=dict(size=12, color='green'),
                         name='Startpunt'
                     ))
-                    fig.add_trace(go.Scattermapbox(
+                    fig.add_trace(go.Scattermap(
                         lat=[coords_opt[-1][0]],
                         lon=[coords_opt[-1][1]],
                         mode='markers',

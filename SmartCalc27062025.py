@@ -123,7 +123,6 @@ import plotly.graph_objects as go
 @st.cache_data(show_spinner=False)
 def postcode_to_coords(postcode, postcode_dict=None, postcode_df=None):
     start_time = time.time()
-    print(f"[DEBUG] Start postcode_to_coords({postcode})")
     global postcode_cache
     p = str(postcode).strip().replace(" ", "").upper()
     if postcode_df is not None:
@@ -132,13 +131,10 @@ def postcode_to_coords(postcode, postcode_dict=None, postcode_df=None):
             lat = float(match.iloc[0]["lat"])
             lon = float(match.iloc[0]["lon"])
             postcode_cache[p] = (lat, lon)
-            print(f"[DEBUG] Einde postcode_to_coords({postcode}) - duur: {time.time() - start_time:.2f}s")
             return lat, lon
     if postcode_dict and p in postcode_dict:
-        print(f"[DEBUG] Einde postcode_to_coords({postcode}) - duur: {time.time() - start_time:.2f}s")
         return postcode_dict[p]
     if p in postcode_cache:
-        print(f"[DEBUG] Einde postcode_to_coords({postcode}) - duur: {time.time() - start_time:.2f}s")
         return postcode_cache[p]
 
     url = "https://nominatim.openstreetmap.org/search"
@@ -150,14 +146,10 @@ def postcode_to_coords(postcode, postcode_dict=None, postcode_df=None):
         lat = float(data[0]["lat"])
         lon = float(data[0]["lon"])
         postcode_cache[p] = (lat, lon)
-        print(f"[DEBUG] Einde postcode_to_coords({postcode}) - duur: {time.time() - start_time:.2f}s")
         return lat, lon
-    print(f"[DEBUG] Einde postcode_to_coords({postcode}) - duur: {time.time() - start_time:.2f}s")
     return None
 
 def get_osrm_route(coords_list):
-    start_time = time.time()
-    print(f"[DEBUG] Start get_osrm_route({coords_list})")
     def segment_key(p1, p2):
         return hashlib.sha256(f"{p1}-{p2}".encode()).hexdigest()
 
@@ -205,12 +197,9 @@ def get_osrm_route(coords_list):
         }],
         "code": "Ok"
     }
-    print(f"[DEBUG] Einde get_osrm_route - duur: {time.time() - start_time:.2f}s")
     return result
 
 def find_optimal_route(start, via, end, method=None):
-    start_time = time.time()
-    print(f"[DEBUG] Start find_optimal_route({start}, {via}, {end}, method={method})")
     if method is None:
         method = st.session_state.get("global_method", "Brute-Force")
     if method == "Nearest Neighbor":
@@ -225,7 +214,6 @@ def find_optimal_route(start, via, end, method=None):
             current = next_stop
         best_coords = [start] + ordered + [end]
         best_time = get_osrm_route(best_coords)["routes"][0]["duration"]
-        print(f"[DEBUG] Einde find_optimal_route - duur: {time.time() - start_time:.2f}s")
         return ordered, best_coords, best_time
     elif method == "Matrix":
         # Matrixbenadering met brute berekening van alle combinaties
@@ -265,7 +253,6 @@ def find_optimal_route(start, via, end, method=None):
                 best_order = [via[i - 1] for i in perm]
                 best_coords = [start] + [via[i - 1] for i in perm] + [end]
 
-        print(f"[DEBUG] Einde find_optimal_route - duur: {time.time() - start_time:.2f}s")
         return best_order, best_coords, best_time
     else:
         best_order = via
@@ -285,7 +272,6 @@ def find_optimal_route(start, via, end, method=None):
                     best_time = time_
                     best_order = list(perm)
                     best_coords = route_coords
-        print(f"[DEBUG] Einde find_optimal_route - duur: {time.time() - start_time:.2f}s")
         return best_order, best_coords, best_time
 
 st.title("📍 Routeplanner")
@@ -395,6 +381,9 @@ with tab1:
                 best_coords = data["optimized"]["coords"]
                 route_opt = get_osrm_route(best_coords)
                 route_coords = best_coords
+                # Store optimized route geometry for map centering
+                if route_opt and route_opt.get("routes"):
+                    data["optimized"]["route_geometry"] = route_opt["routes"][0]["geometry"]["coordinates"]
             else:
                 route_opt = route_orig
                 route_coords = data["original"]["coords"]
@@ -452,24 +441,69 @@ with tab1:
                 name='Eindpunt'
             ))
 
-            # Center map
+            # Center map properly based on route bounds
             coords_all = []
-            if optimize and data.get("optimized") and data["optimized"].get("route") and data["optimized"]["route"].get("geometry"):
-                coords_all = data["optimized"]["route"]["geometry"].get("coordinates", [])
+            
+            if isinstance(route_orig, dict) and "routes" in route_orig and route_orig["routes"]:
+                coords_all = route_orig["routes"][0]["geometry"]["coordinates"]
+            if optimize and data.get("optimized") and "route_geometry" in data["optimized"]:
+                coords_all = data["optimized"]["route_geometry"]
+            if coords_all and len(coords_all) > 0:
+                try:
+                    lats = [coord[1] for coord in coords_all]
+                    lons = [coord[0] for coord in coords_all]
+                    min_lat, max_lat = min(lats), max(lats)
+                    min_lon, max_lon = min(lons), max(lons)
+                    center_lat = (min_lat + max_lat) / 2
+                    center_lon = (min_lon + max_lon) / 2
+                    import math
+                    diagonal_distance = math.sqrt((max_lat - min_lat) ** 2 + (max_lon - min_lon) ** 2)
+                    if diagonal_distance < 0.002:
+                        zoom_level = 17
+                    elif diagonal_distance < 0.004:
+                        zoom_level = 16
+                    elif diagonal_distance < 0.008:
+                        zoom_level = 15
+                    elif diagonal_distance < 0.015:
+                        zoom_level = 14
+                    elif diagonal_distance < 0.03:
+                        zoom_level = 13
+                    elif diagonal_distance < 0.07:
+                        zoom_level = 12
+                    elif diagonal_distance < 0.15:
+                        zoom_level = 11
+                    elif diagonal_distance < 0.35:
+                        zoom_level = 10
+                    elif diagonal_distance < 0.7:
+                        zoom_level = 9
+                    elif diagonal_distance < 1.5:
+                        zoom_level = 8
+                    else:
+                        zoom_level = 7
+                except Exception:
+                    center_lat = 52.1326
+                    center_lon = 5.2913
+                    zoom_level = 7
             else:
-                coords_all = data["original"].get("coords_all", [])
-            mid_lat = sum(coord[1] for coord in coords_all) / len(coords_all)
-            mid_lon = sum(coord[0] for coord in coords_all) / len(coords_all)
-
+                center_lat = 52.1326
+                center_lon = 5.2913
+                zoom_level = 7
+            if center_lat == 0 and center_lon == 0:
+                center_lat = 52.1326
+                center_lon = 5.2913
+                zoom_level = 7
+            if coords_all and len(coords_all) < 30 and zoom_level < 17:
+                zoom_level = min(zoom_level + 1, 17)
             fig.update_layout(
-                mapbox_style="open-street-map",
-                mapbox_zoom=9,
-                mapbox_center={"lat": mid_lat, "lon": mid_lon},
+                mapbox=dict(
+                    style="open-street-map",
+                    center={"lat": center_lat, "lon": center_lon},
+                    zoom=zoom_level
+                ),
                 margin={"r": 0, "t": 0, "l": 0, "b": 0},
-                height=500,
+                height=800,
                 legend=dict(x=0, y=1)
             )
-
             st.plotly_chart(fig, use_container_width=True)
 
 def load_postcode_coordinates(csv_path):
@@ -506,8 +540,6 @@ def pas_kolomnamen_aan(df):
     return df.rename(columns=new_columns)
 
 def process_batch(uploaded_file):
-    start_time = time.time()
-    print(f"[DEBUG] Start process_batch")
     # Reset segment cache teller
     with shelve.open("segment_cache.db", writeback=True) as segment_cache:
         segment_cache["_total_requests"] = 0
@@ -556,7 +588,6 @@ def process_batch(uploaded_file):
 
     if df.empty:
         st.warning("⚠️ Geen gegevens gevonden in het Excel-bestand.")
-        print(f"[DEBUG] Einde process_batch - duur: {time.time() - start_time:.2f}s")
         return pd.DataFrame()
     results = []
     progress = st.progress(0, text="Bezig met batchverwerking...")
@@ -601,23 +632,19 @@ def process_batch(uploaded_file):
             coords_hash = hashlib.sha256("|".join([f"{lat:.5f},{lon:.5f}" for lat, lon in coords]).encode()).hexdigest()
             route_orig = batch_route_cache.get(coords_hash)
             if not route_orig:
-                print(f"🔎 [DEBUG] get_osrm_route (origineel) wordt aangeroepen voor route {idx + 1}")
                 route_orig = get_osrm_route(coords)
                 batch_route_cache[coords_hash] = route_orig
             dist_orig = route_orig["routes"][0]["distance"] / 1000 if route_orig else None
             time_orig = route_orig["routes"][0]["duration"] / 60 if route_orig else None
 
             # Geoptimaliseerde volgorde
-            print(f"🔎 [DEBUG] find_optimal_route wordt aangeroepen voor route {idx + 1}")
             opt_result = find_optimal_route(coords[0], coords[1:-1], coords[-1], method=st.session_state.get("global_method", "Brute-Force"))
             best_coords = opt_result[1]
             opt_hash = hashlib.sha256("|".join([f"{lat:.5f},{lon:.5f}" for lat, lon in best_coords]).encode()).hexdigest()
             route_opt = batch_route_cache.get(opt_hash)
             if not route_opt:
-                print(f"🔎 [DEBUG] get_osrm_route (optimaal) wordt aangeroepen voor route {idx + 1}")
                 route_opt = get_osrm_route(best_coords)
                 batch_route_cache[opt_hash] = route_opt
-                print(f"✅ Route {idx + 1}: origineel + optimaal berekend en opgeslagen.")
             dist_opt = route_opt["routes"][0]["distance"] / 1000 if route_opt else None
             time_opt = route_opt["routes"][0]["duration"] / 60 if route_opt else None
 
@@ -646,7 +673,6 @@ def process_batch(uploaded_file):
         }
     progress.empty()
     st.success("✅ Kolomkeuze bevestigd, planner gestart...")
-    print(f"[DEBUG] Einde process_batch - duur: {time.time() - start_time:.2f}s")
     return pd.DataFrame(results)
 
 
