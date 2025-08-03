@@ -219,3 +219,4 @@ def process_batch(uploaded_file):
                 })
     progress.empty()
     return pd.DataFrame(results)
+#Commented out to avoid running on import

@@ -1,0 +1,16 @@
+
+Kaarten:
+wget http://download.geofabrik.de/europe/netherlands-latest.osm.pbf
+
+Installatie:
+
+docker run -t -v $(pwd):/data osrm/osrm-backend osrm-extract -p /opt/car.lua /data/netherlands-latest.osm.pbf
+docker run -t -v $(pwd):/data osrm/osrm-backend osrm-partition /data/netherlands-latest.osrm
+docker run -t -v $(pwd):/data osrm/osrm-backend osrm-customize /data/netherlands-latest.osrm
+
+Starten container:
+docker run -t -i -p 5000:5000 -v $(pwd):/data osrm/osrm-backend osrm-routed --algorithm mld /data/netherlands-latest.osrm
+
+
+Testen OSRM:
+http://localhost:5000/route/v1/driving/4.899431,52.379189;5.121420,52.090737?overview=false 
