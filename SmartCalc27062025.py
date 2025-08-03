@@ -397,7 +397,7 @@ with tab1:
             fig = go.Figure()
 
             # Originele route (rood)
-            fig.add_trace(go.Scattermapbox(
+            fig.add_trace(go.Scattermap(
                 lat=[coord[1] for coord in route_orig["routes"][0]["geometry"]["coordinates"]],
                 lon=[coord[0] for coord in route_orig["routes"][0]["geometry"]["coordinates"]],
                 mode="lines",
@@ -406,7 +406,7 @@ with tab1:
             ))
 
             # Geoptimaliseerde route (groen)
-            fig.add_trace(go.Scattermapbox(
+            fig.add_trace(go.Scattermap(
                 lat=[coord[1] for coord in route_opt["routes"][0]["geometry"]["coordinates"]],
                 lon=[coord[0] for coord in route_opt["routes"][0]["geometry"]["coordinates"]],
                 mode="lines",
@@ -415,17 +415,7 @@ with tab1:
             ))
 
             # Voeg markers toe voor start- en eindpunt
-            # route_coords is altijd beschikbaar als best_coords of original_coords
-            # en is een lijst van (lat, lon) tuples
-            # Maar in deze code: route_coords = best_coords of original_coords
-            # best_coords/original_coords: [(lat, lon), ...]
-            # De instructie verwacht (lon, lat), dus moeten we corrigeren
-            # We willen markers op (lat, lon) -> (lat, lon)
-            # Maar Plotly verwacht lat=[lat], lon=[lon]
-            # Dus:
-            # route_coords[0][0] = lat, route_coords[0][1] = lon
-            # We willen lat=[lat], lon=[lon]
-            fig.add_trace(go.Scattermapbox(
+            fig.add_trace(go.Scattermap(
                 lat=[route_coords[0][0]],
                 lon=[route_coords[0][1]],
                 mode='markers',
@@ -433,7 +423,7 @@ with tab1:
                 name='Startpunt'
             ))
 
-            fig.add_trace(go.Scattermapbox(
+            fig.add_trace(go.Scattermap(
                 lat=[route_coords[-1][0]],
                 lon=[route_coords[-1][1]],
                 mode='markers',
@@ -495,7 +485,7 @@ with tab1:
             if coords_all and len(coords_all) < 30 and zoom_level < 17:
                 zoom_level = min(zoom_level + 1, 17)
             fig.update_layout(
-                mapbox=dict(
+                map=dict(
                     style="open-street-map",
                     center={"lat": center_lat, "lon": center_lon},
                     zoom=zoom_level
