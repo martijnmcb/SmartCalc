@@ -169,7 +169,7 @@ def get_osrm_route(coords_list):
                 segment_cache["_cache_hits"] = segment_cache.get("_cache_hits", 0) + 1
             else:
                 coords_str = f"{p1[1]},{p1[0]};{p2[1]},{p2[0]}"
-                url = f"http://localhost:5000/route/v1/driving/{coords_str}?overview=full&geometries=geojson"
+                url = f"http://100.87.138.39:5000/route/v1/driving/{coords_str}?overview=full&geometries=geojson"
                 response = requests.get(url)
                 if response.status_code == 200:
                     seg_result = response.json()
@@ -774,7 +774,7 @@ with tab2:
                     key = hashlib.sha256("|".join([f"{a[0]:.5f},{a[1]:.5f}", f"{b[0]:.5f},{b[1]:.5f}"]).encode()).hexdigest()
                     if key not in segment_cache:
                         coord_string = f"{a[1]},{a[0]};{b[1]},{b[0]}"
-                        url = f"http://localhost:5000/route/v1/driving/{coord_string}?overview=false"
+                        url = f"http://100.87.138.39:5000/route/v1/driving/{coord_string}?overview=false"
                         res = requests.get(url)
                         if res.status_code == 200:
                             segment_cache[key] = res.json()
