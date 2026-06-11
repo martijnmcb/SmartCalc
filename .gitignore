@@ -1,0 +1,7 @@
+.DS_Store
+segment_cache
+segment_cache.db
+segment_cache.db-shm
+segment_cache.db-wal
+segment_cache.pkl
+route_cache.pkl
